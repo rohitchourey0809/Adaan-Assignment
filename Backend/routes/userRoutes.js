@@ -1,31 +1,22 @@
 const express = require("express");
-const router = express.Router();
 const {
   registerUser,
-  authUser,
+  loginUser,
+  loginUserWithOtp,
   getUserProfile,
   updateUserProfile,
 } = require("../controllers/userController");
-const { protect } = require("../middleware/authMiddleware");
-const upload = require("../middleware/uploadMiddleware"); // Path to your upload middleware
+const authMiddleware = require("../middlewares/authMiddleware");
+const authController = require("../controllers/authController");
+
+const router = express.Router();
 
 router.post("/register", registerUser);
-router.post("/login", authUser);
-router
-  .route("/profile")
-  .get(protect, getUserProfile)
-  .put(protect, updateUserProfile);
-
-router.post("/upload", protect, upload.single("profilePhoto"), (req, res) => {
-  try {
-    if (!req.file) {
-      return res.status(400).send("No file uploaded.");
-    }
-    res.send(`/${req.file.path}`);
-  } catch (error) {
-    console.error(error);
-    res.status(500).send("Server error.");
-  }
-});
+router.post("/login", loginUser);
+router.post("/login-otp", loginUserWithOtp);
+router.post("/send-otp", authController.sendOtp);
+router.post("/verify-otp", authController.verifyOtp);
+router.get("/user", authMiddleware, getUserProfile);
+router.post("/update-profile", authMiddleware, updateUserProfile);
 
 module.exports = router;

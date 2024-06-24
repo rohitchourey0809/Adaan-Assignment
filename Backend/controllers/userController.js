@@ -1,100 +1,124 @@
 const User = require("../models/userModel");
-const asyncHandler = require("express-async-handler");
-const generateToken = require("../utils/token");
+const bcrypt = require("bcryptjs");
+const jwt = require("jsonwebtoken");
+const multer = require("multer");
+const path = require("path");
+const { JWT_SECRET } = require("../config");
 
-const registerUser = asyncHandler(async (req, res) => {
+// Multer setup for file uploads
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, "uploads/");
+  },
+  filename: function (req, file, cb) {
+    cb(null, Date.now() + path.extname(file.originalname));
+  },
+});
+
+const upload = multer({ storage: storage });
+
+// Register a new user
+exports.registerUser = async (req, res) => {
   const { phone, email, name, password } = req.body;
 
-  const userExists = await User.findOne({ phone });
+  try {
+    const existingUser = await User.findOne({ phone });
+    if (existingUser) {
+      return res.status(400).json({ message: "User already exists" });
+    }
 
-  if (userExists) {
-    res.status(400);
-    throw new Error("User already exists");
-  }
+    const hashedPassword = await bcrypt.hash(password, 10);
 
-  const user = await User.create({ phone, email, name, password });
-
-  if (user) {
-    res.status(201).json({
-      _id: user._id,
-      phone: user.phone,
-      email: user.email,
-      name: user.name,
-      token: generateToken(user._id),
+    const newUser = new User({
+      phone,
+      email,
+      name,
+      password: hashedPassword,
     });
-  } else {
-    res.status(400);
-    throw new Error("Invalid user data");
-  }
-});
 
-const authUser = asyncHandler(async (req, res) => {
+    await newUser.save();
+
+    res.status(201).json({ message: newUser });
+  } catch (error) {
+    res.status(500).json({ message: "Server error", error });
+  }
+};
+
+// Login user
+exports.loginUser = async (req, res) => {
   const { phone, password } = req.body;
 
-  const user = await User.findOne({ phone });
+  try {
+    const user = await User.findOne({ phone });
+    console.log("user", user);
+    if (!user) {
+      return res.status(400).json({ message: "Invalid credentials" });
+    }
 
-  if (user && (await user.matchPassword(password))) {
-    res.json({
-      _id: user._id,
-      phone: user.phone,
-      email: user.email,
-      name: user.name,
-      token: generateToken(user._id),
+    const isMatch = await bcrypt.compare(password, user.password);
+    console.log("isMatch", isMatch);
+    if (!isMatch) {
+      return res.status(400).json({ message: "Invalid credentials" });
+    }
+
+    const token = jwt.sign({ id: user._id }, JWT_SECRET, {
+      expiresIn: "1h",
     });
-  } else {
-    res.status(401);
-    throw new Error("Invalid phone or password");
+
+    console.log("token-->", token);
+    res.json({ token });
+  } catch (error) {
+    res.status(500).json({ message: "Server error", error });
   }
-});
+};
 
-const getUserProfile = asyncHandler(async (req, res) => {
-  const user = await User.findById(req.user._id);
+// Login user with OTP (dummy implementation)
+exports.loginUserWithOtp = async (req, res) => {
+  // Dummy implementation for OTP login
+  res.status(200).json({ message: "Login with OTP successful" });
+};
 
-  if (user) {
-    res.json({
-      _id: user._id,
-      phone: user.phone,
-      email: user.email,
-      name: user.name,
-      profilePhoto: user.profilePhoto,
-      pastExperience: user.pastExperience,
-      skillSets: user.skillSets,
-      educationalQualification: user.educationalQualification,
-    });
-  } else {
-    res.status(404);
-    throw new Error("User not found");
+// Get
+
+// Get user profile
+exports.getUserProfile = async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id);
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    res.json(user);
+  } catch (error) {
+    res.status(500).json({ message: "Server error", error });
   }
-});
+};
 
-const updateUserProfile = asyncHandler(async (req, res) => {
-  const user = await User.findById(req.user._id);
+// Update user profile
+exports.updateUserProfile = [
+  upload.single("photo"),
+  async (req, res) => {
+    try {
+      const user = await User.findById(req.user.id);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
 
-  if (user) {
-    user.name = req.body.name || user.name;
-    user.email = req.body.email || user.email;
-    user.profilePhoto = req.body.profilePhoto || user.profilePhoto;
-    user.pastExperience = req.body.pastExperience || user.pastExperience;
-    user.skillSets = req.body.skillSets || user.skillSets;
-    user.educationalQualification =
-      req.body.educationalQualification || user.educationalQualification;
+      const { name, email, experience, skills, education } = req.body;
+      user.name = name || user.name;
+      user.email = email || user.email;
+      user.experience = experience || user.experience;
+      user.skills = skills || user.skills;
+      user.education = education || user.education;
+      if (req.file) {
+        user.photo = `/uploads/${req.file.filename}`;
+      }
 
-    const updatedUser = await user.save();
+      await user.save();
 
-    res.json({
-      _id: updatedUser._id,
-      phone: updatedUser.phone,
-      email: updatedUser.email,
-      name: updatedUser.name,
-      profilePhoto: updatedUser.profilePhoto,
-      pastExperience: updatedUser.pastExperience,
-      skillSets: updatedUser.skillSets,
-      educationalQualification: updatedUser.educationalQualification,
-    });
-  } else {
-    res.status(404);
-    throw new Error("User not found");
-  }
-});
-
-module.exports = { registerUser, authUser, getUserProfile, updateUserProfile };
+      res.json({ message: "Profile updated successfully", user });
+    } catch (error) {
+      res.status(500).json({ message: "Server error", error });
+    }
+  },
+];
