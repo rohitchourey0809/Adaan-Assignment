@@ -2,8 +2,6 @@
 
 [VideoLink  Click Here]https://go.screenpal.com/watch/cZ1ZXRV8jq0
 
-Play this video
-ttps://go.screenpal.com/watch/cZ1ZXRV8jq0
 
 
 Adani Solutions Backend
